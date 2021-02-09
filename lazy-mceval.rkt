@@ -46,8 +46,9 @@
          (eval-sequence
            (procedure-body procedure)
            (extend-environment
-             (procedure-parameters procedure)
-             (list-of-delayed-args arguments env) ; changed
+             (rewrite-procedure (procedure-parameters procedure))
+             (hybrid-eval (procedure-parameters procedure) arguments env)
+             ;(list-of-delayed-args arguments env) ; changed
              (procedure-environment procedure))))
         (else
          (error
@@ -59,12 +60,31 @@
       (cons (actual-value (first-operand exps) env)
             (list-of-arg-values (rest-operands exps)
                                 env))))
-
+  
 (define (list-of-delayed-args exps env)
   (if (no-operands? exps)
       '()
       (cons (delay-it (first-operand exps) env)
             (list-of-delayed-args (rest-operands exps) env))))
+
+;; procedure-param remove delay
+
+(define (rewrite-procedure proc)
+  (cond
+    [(no-operands? proc) '()] 
+    [(tagged-list? (first-operand proc) 'delayed)
+     (cons (first-operand (rest-operands (first-operand proc))) (rewrite-procedure (rest-operands proc)))]
+    [else (cons (first-operand proc) (rewrite-procedure (rest-operands proc)))]))
+
+
+;;create new function to determine whether param is delayed or not and then delay the arg if so
+(define (hybrid-eval proc exps env)
+  (cond
+    [(no-operands? exps) '()]
+    [(tagged-list? (first-operand proc) 'delayed)
+     (cons (delay-it (first-operand exps) env) (hybrid-eval (rest-operands proc) (rest-operands exps) env))]
+    [else (cons (actual-value (first-operand exps) env) (hybrid-eval (rest-operands proc) (rest-operands exps) env))]))
+     
 
 (define (eval-if exp env)
   (if (true? (actual-value (if-predicate exp) env))
@@ -119,7 +139,7 @@
 ;; "thunk" that has been forced and is storing its (memoized) value
 (define (evaluated-thunk? obj)
   (tagged-mlist? obj 'evaluated-thunk))
-
+ 
 (define (thunk-value evaluated-thunk) (mcadr evaluated-thunk))
 
 (define (force-it obj)
@@ -366,6 +386,7 @@
                              the-empty-environment)))
     (define-variable! 'true true initial-env)
     (define-variable! 'false false initial-env)
+    (eval-definition '(define (try a (delayed b)) (if (= a 0) 1 b)) initial-env)
     initial-env))
 
 (define (primitive-procedure? proc)
